@@ -1,0 +1,30 @@
+==========
+ izaber.flask
+==========
+
+Overview
+========
+
+Just offers a bit of integration for Flask so that configuration of the server can be accomplished in the izaber.yaml file.
+
+Documentation
+=============
+
+from izaber import initialize
+from izaber.flask import app
+
+@app.route('/')
+def hello_world():
+    return 'Hello, World!'
+
+if __name__ = '__main__':
+    initialize('example')
+    app.run()
+
+Installation
+============
+Install by using:
+
+pip install izaber-flask
+
+
