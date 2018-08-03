@@ -3,6 +3,11 @@ import importlib
 import threading
 import random
 import sys
+import six
+from six.moves import queue
+import traceback
+import flask
+import re
 
 import izaber
 from izaber import config, app_config, autoloader
@@ -37,27 +42,170 @@ sockets = Sockets(izaber.flask.app)
 class WAMPRegistrations(object):
     def __init__(self):
         self.registered = {}
+        self.subscribed = {}
 
-    def add_remote(self,uri):
-        pass
+    def reap_client(self,client):
+        """ Removes a client from all registrations and subcriptions
+            Usually used when a client disconnects
+        """
+        for uri, handler in self.registered.items():
+            if handler['type'] == 'local':
+                continue
+            if handler['client'] == client:
+                del self.registered[uri]
 
-    def add_local(self,uri,callback):
+    def set_uri_base(self,uri_base):
+        """ Sets up the base URI that the system will default to
+            when locally making registrations/calls/etc.
+        """
+        if uri_base:
+            self.uri_base = uri_base + '.'
+        else:
+            self.uri_base = ''
+
+    def register_remote(self,uri,client):
+        """ Adds a client that's offering to support a particular
+            callback on a uri
+        """
+        if self.uri_base and uri.startswith(self.uri_base):
+            uri = uri.replace(self.uri_base,'',1)
+        callback_id = secure_rand()
+        self.registered[uri] = {
+            'type': 'remote',
+            'client': client,
+            'callback_id': callback_id,
+        }
+        return callback_id
+
+    def register_local(self,uri,callback):
+        """ Registers a local function for handling requests.
+            This is the end function of using the @wamp.register
+            decorator on a function
+        """
+        callback_id = secure_rand()
         self.registered[uri] = {
             'type': 'local',
-            'callback': callback
+            'callback': callback,
+            'callback_id': callback_id,
         }
+        return callback_id
 
     def unregister(self,uri):
-        pass
+        """ Removes a URI as a callback target
+        """
+        if uri in self.registered:
+            del self.registered[uri]
 
-    def invoke(self,uri,args,kwargs):
-        if uri not in self.registered:
+    def invoke(self,request,callback):
+        """ Runs the RPC code associated with the URI
+        """
+        uri = request.procedure
+        args = request.args
+        kwargs = request.kwargs
+
+        uri_normalized = uri
+        if self.uri_base and uri.startswith(self.uri_base):
+            uri_normalized = uri.replace(self.uri_base,'',1)
+        if uri_normalized not in self.registered:
             raise Exception('uri does not exist')
-        handler = self.registered[uri]
+        handler = self.registered[uri_normalized]
+
         if handler['type'] == 'local':
-            return handler['callback'](*args,**kwargs)
+            def thread_run():
+                result = handler['callback'](*args,**kwargs)
+                callback(RESULT(
+                    request_id = request.request_id,
+                    details = {},
+                    args = [ result ],
+                    kwargs = {}
+                ))
+            thread_process = threading.Thread(target=thread_run)
+            thread_process.daemon = True
+            thread_process.start()
+        elif handler['type'] == 'remote':
+            def on_yield(result):
+                callback(RESULT(
+                    request_id = request.request_id,
+                    details = {},
+                    args = result.args,
+                    kwargs = result.kwargs
+                ))
+
+            callback_id = handler['callback_id']
+            client = handler['client']
+            if client.closed():
+                self.reap_client(client)
+                raise Exception('uri does not exist')
+            client.send_and_await_response(
+                INVOCATION(
+                    request_id=request.request_id,
+                    registration_id=callback_id,
+                    details={}
+                ),
+                on_yield
+            )
         else:
-            pass # what to do here?
+            raise Exception('Unknown handler type')
+
+    def subscribe_local(self,uri,callback):
+        """ Registers a local function to be invoked when the URI
+            matches a particular pattern
+        """
+        subscription_id = secure_rand()
+        self.subscribed.setdefault(uri,[])\
+            .append({
+                'subscription_id': subscription_id,
+                'type': 'local',
+                'callback': callback,
+            })
+        return subscription_id
+
+    def subscribe_remote(self,uri,client):
+        """ Registers a remote function to be invoked when the URI
+            matches a particular pattern
+        """
+        if self.uri_base and uri.startswith(self.uri_base):
+            uri = uri.replace(self.uri_base,'',1)
+        subscription_id = secure_rand()
+        self.subscribed.setdefault(uri,[])\
+            .append({
+                'subscription_id': subscription_id,
+                'type': 'remote',
+                'client': client,
+            })
+        return subscription_id
+
+    def publish(self,request):
+        """ Send the publication to all subscribers
+            (If there are any...)
+        """
+        uri = request.topic
+
+        uri_normalized = uri
+        if self.uri_base and uri.startswith(self.uri_base):
+            uri_normalized = uri.replace(self.uri_base,'',1)
+        if uri_normalized not in self.subscribed:
+            return
+
+        publish_id = secure_rand()
+        listeners = self.subscribed.get(uri_normalized,[])
+        for listener in listeners:
+            publish_event = EVENT(
+                subscription_id = listener['subscription_id'],
+                publish_id = publish_id,
+                args = request.args,
+                kwargs = request.kwargs,
+            )
+            if listener['type'] == 'local':
+                listener['callback'](publish_event)
+            elif listener['type'] == 'remote':
+                client = listener['client']
+                if client.closed():
+                    self.reap_client(client)
+                    continue
+                client.send_message(publish_event)
+
+        return publish_id
 
 class FlaskAppWrapper(object):
     def __init__(self,app,users=None):
@@ -74,13 +222,16 @@ class FlaskAppWrapper(object):
     def client_add(self,client):
         self.clients.append(client)
 
-    def run(self, host=None, port=None, debug=None, **options):
+    def run(self, host=None, port=None, debug=None, uri_base=None, **options):
         if host is None:
             host = config.flask.host
         if port is None:
             port = config.flask.port
         if debug is None:
             debug = config.debug
+        if uri_base is None:
+            uri_base = config.flask.wamp.uri_base
+        self.uri_base = uri_base
 
         server = pywsgi.WSGIServer(
                         (host, port),
@@ -88,6 +239,10 @@ class FlaskAppWrapper(object):
                         handler_class=WebSocketHandler
                     )
         server.serve_forever()
+
+    def finalize_wamp_setup(self,realm='izaber',uri_base=''):
+        self.realm = realm
+        self.registrations.set_uri_base(uri_base)
 
     def auth_details(self,ws,authid,authrole):
         return {
@@ -196,54 +351,54 @@ class FlaskAppWrapper(object):
             details=details
         )
 
-    def register(self,uri):
+    def register_remote(self,uri,client):
         """ Registers a callback URI
         """
-        print "REGISTRED:", uri
-        pass
+        return self.registrations.register_remote(uri,client)
 
     def register_local(self,uri,callback):
         """ Takes a local function and registers it in the callbacks table
         """
-        self.registrations.add_local(uri,callback)
+        return self.registrations.register_local(uri,callback)
 
-    def call(self,request):
+    def call(self,request,callback):
         """ Take the request and pass it along to the appropriate
             handler whereever on the bus it might be
         """
         uri = request.procedure
         try:
-            result = self.registrations.invoke(uri,request.args,request.kwargs)
+            self.registrations.invoke(request,callback)
         except Exception as ex:
-            return ERROR(
+            traceback.print_exc()
+            callback(ERROR(
                         request_code = WAMP_CALL,
                         request_id = request.request_id,
                         details = {},
                         error = 'URI does not exist',
                         args = [],
-                    )
+                    ))
 
-        return RESULT(
-            request_id = request.request_id,
-            details = {},
-            args = [ result ],
-            kwargs = {}
-        )
-        print request.dump()
-        print "HERE I AM!"
-        pass
 
     def unregister(self,uri):
-        pass
+        """ Remove the uri from the call pool
+        """
+        return self.registrations.unregister(uri)
 
-    def publish(self):
-        pass
+    def subscribe_remote(self,uri,client):
+        """ Registers a callback URI
+        """
+        return self.registrations.subscribe_remote(uri,client)
 
-    def subscribe(self,uri):
-        pass
+    def subscribe_local(self,uri,callback):
+        """ Takes a local function and subscribes it in the callbacks table
+        """
+        return self.registrations.subscribe_local(uri,callback)
 
     def unsubscribe(self,uri):
         pass
+
+    def publish(self,request):
+        self.registrations.publish(request)
 
     def __getattr__(self,k):
         return getattr(self._app,k)
@@ -268,6 +423,22 @@ class IZaberFlaskWAMP(object):
             return f
         return actual_register_decorator
 
+    def subscribe(self,uri):
+        """ A method to use a decorator to subscribe a callback
+        """
+        def actual_subscribe_decorator(f):
+            app.subscribe_local(uri, f)
+            return f
+        return actual_subscribe_decorator
+
+    def publish(self,topic,options=None,args=None,kwargs=None):
+        app.publish(PUBLISH(
+            options=options or {},
+            topic=topic,
+            args=args or [],
+            kwargs=kwargs or {}
+        ))
+
 wamp = IZaberFlaskWAMP(sockets,app)
 
 STATE_DISCONNECTED = 0
@@ -277,59 +448,52 @@ STATE_AUTHENTICATING = 4
 STATE_CONNECTED = 2
 
 class WAMPServiceClient(object):
+
     def __init__(self,app,ws):
         self.ws = ws
         self.state = STATE_CONNECTING
         self.app = app
         self.session_id = secure_rand()
+        self._requests_pending = {}
+        self.timeout = 1
+
+    def closed(self):
+        """ Returns true if closed
+        """
+        return self.ws.closed
 
     def dispatch_to_awaiting(self,result):
         """ Send data ato the appropriate queues
         """
         try:
-            self.send_message(result)
+            try:
+                request_id = result.request_id
+                if request_id in self._requests_pending:
+                    self._requests_pending[request_id]['callback'](result)
+                    del self._requests_pending[request_id]
+                else:
+                    self.send_message(result)
+            except AttributeError:
+                self.send_message(result)
+
         except Exception as ex:
-            print ex
+            traceback.print_exc()
             raise
 
-#    def send_and_await_response(self,request):
-#        """ Used by most things. Sends out a request then awaits a response
-#            keyed by the request_id
-#        """
-#        if self._state == STATE_DISCONNECTED:
-#            raise Exception("WAMP is currently disconnected!")
-#        wait_queue = queue.Queue()
-#        request_id = request.request_id
-#        self._requests_pending[request_id] = wait_queue;
-#        self.send_message(request)
-#        try:
-#            return wait_queue.get(block=True,timeout=self.timeout)
-#        except Exception as ex:
-#            raise Exception("Did not receive a response!")
-#
-#    def dispatch_to_awaiting(self,result):
-#        """ Send dat ato the appropriate queues
-#        """
-#
-#        # If we are awaiting to login, then we might also get
-#        # an abort message. Handle that here....
-#        if self._state == STATE_AUTHENTICATING:
-#            # If the authentication message is something unexpected,
-#            # we'll just ignore it for now
-#            if result == WAMP_ABORT \
-#               or result == WAMP_WELCOME \
-#               or result == WAMP_GOODBYE:
-#                self._welcome_queue.put(result)
-#            return
-#
-#        try:
-#            request_id = result.request_id
-#            if request_id in self._requests_pending:
-#                self._requests_pending[request_id].put(result)
-#                del self._requests_pending[request_id]
-#        except:
-#            raise Exception("Response does not have a request id. Do not know who to send data to. Data: {} ".format(result.dump()))
-#
+    def send_and_await_response(self,request,callback):
+        """ Sends out a request then awaits a response
+            keyed by the request_id
+        """
+        if self.state == STATE_DISCONNECTED:
+            raise Exception("WAMP is currently disconnected!")
+
+        # Need to setup the callback
+        request_id = request.request_id
+        self._requests_pending[request_id] = {
+                                        'callback': callback,
+                                        'timeout': self.timeout, # TODO reap time
+                                    }
+        self.send_message(request)
 
     def handle_hello(self, hello):
         """ A new customer!
@@ -359,12 +523,26 @@ class WAMPServiceClient(object):
                     details=details
                 ))
 
+    def handle_register(self, register):
+        """ When a client would like to a register a RPC
+            function to a URI
+        """
+        callback_id = self.app.register_remote(
+                            uri=register.procedure,
+                            client=self
+                        )
+        self.dispatch_to_awaiting(REGISTERED(
+                    request_id=register.request_id,
+                    registration_id=callback_id
+                ))
+
     def handle_call(self, request):
         """ When a client requests that a particular function
             be invoked.
         """
-        result = self.app.call(request)
-        self.dispatch_to_awaiting(result)
+        def on_yield(result):
+            self.dispatch_to_awaiting(result)
+        self.app.call( request, on_yield )
 
     def handle_authenticate(self, response):
         """ When a client responds to a challenge request
@@ -372,6 +550,32 @@ class WAMPServiceClient(object):
         result = self.server.auth_method_authenticate(self,response)
         if result:
             self.state = STATE_CONNECTED
+        self.dispatch_to_awaiting(result)
+
+    def handle_subscribe(self, request):
+        """ Hey! I want to hear about information on this URI
+        """
+        request_id = request.request_id
+        subscription_id = self.app.subscribe_remote(request.topic,self)
+        self.send_message(SUBSCRIBED(
+            request_id = request_id,
+            subscription_id=subscription_id
+        ))
+
+    def handle_publish(self, request):
+        """ Hey! I have information that someone may want to hear
+            about on this particlar URI
+        """
+        publish_id = self.app.publish(request)
+        if request.options.get('acknowledge'):
+            self.dispatch_to_awaiting(PUBLISHED(
+                                request_id=request.request_id,
+                                publication_id=publish_id
+                            ))
+
+    def handle_yield(self, result):
+        """ A invocation request has returned!
+        """
         self.dispatch_to_awaiting(result)
 
     def handle_error(self, error):
@@ -384,7 +588,6 @@ class WAMPServiceClient(object):
             into the queue just in case someone wants to do something
             with it but we'll just blackhole it.
         """
-        print "Unknown message:", message.dump()
         self.dispatch_to_awaiting(message)
 
     def send_message(self,message):
@@ -400,7 +603,6 @@ class WAMPServiceClient(object):
     def run(self):
         while not self.ws.closed:
             data = self.ws.receive()
-            print "GOT:", self.ws, data
             if not data:
                 continue
             try:
@@ -413,15 +615,33 @@ class WAMPServiceClient(object):
                     handler_function = getattr(self,handler_name)
                     handler_function(message)
                 except AttributeError as ex:
-                    print "Error trying to handle request:", ex
-                    import traceback
                     traceback.print_exc()
                     self.handle_unknown(message)
             except Exception as ex:
                 # FIXME: Needs more granular exception handling
                 raise
 
-            # self.ws.send(message)
+izaber_flask = None
+class IZaberFlask(flask.Blueprint):
+    def __init__(self, import_name, static_folder='static',
+                    static_url_path='static', template_folder='templates',
+                    url_prefix='', subdomain=None, url_defaults=None,
+                    root_path=None):
+        global izaber_flask
+        name = import_name
+        super(IZaberFlask,self).__init__(name, import_name, static_folder,
+                    static_url_path, template_folder,
+                    url_prefix, subdomain, url_defaults,
+                    root_path)
+        izaber_flask = self
+
+    def route(self,url,*args,**kwargs):
+        if re.search('^/', url):
+            url = url[1:]
+        return super(IZaberFlask,self).route(url,*args,**kwargs)
+
+    def run(self,*args,**kwargs):
+        app.run(*args,**kwargs)
 
 
 @sockets.route('/ws')
@@ -440,5 +660,11 @@ def load_config(**kwargs):
     # to the config (after load). Due to how the flask
     # 'app' variable works, we would need access to config
     # before config loads causing a bit of an annoyance
-    app.realm = config.flask.wamp.realm or 'izaber'
+    app.finalize_wamp_setup(
+            realm=config.flask.wamp.realm,
+            uri_base=config.flask.wamp.uri_base,
+        )
 
+    # Register any app we've created as well
+    if izaber_flask:
+        app.register_blueprint(izaber_flask, url_prefix=r'/')
