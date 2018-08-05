@@ -16,11 +16,11 @@ def echo(data):
 
 @wamp.subscribe('hellos')
 def hellos(data):
-    print "Received subscribed message:", data.dump()
+    print("Received subscribed message:", data.dump())
 
 if __name__ == '__main__':
     initialize('example',environment='debug')
-    print "Running"
+    print("Running")
     app.run()
 
 

@@ -17,6 +17,8 @@ setup(name='izaber_flask_wamp',
           'Flask-Sockets',
           'swampyer',
       ],
+      setup_requires=["pytest-runner",],
+      tests_require=["pytest",],
       dependency_links=[],
       zip_safe=False)
 
