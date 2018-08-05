@@ -6,25 +6,34 @@ def test_matching():
 
     match_list = WAMPURIList()
 
-    # Test context exact matches
+    # Test implicit exact matches
     assert WAMPURI('a').match('a')
     assert WAMPURI('a').match('b') == False
     assert WAMPURI('a').match('a.b') == False
     assert WAMPURI('a.b').match('a') == False
 
-    # Test context prefix matches
+    # Make sure strings resolve to something we expect
+    assert str(WAMPURI('a')) == '<WAMPURI(a)=>{}>'
+
+    # Test implicit prefix matches
     uri = WAMPURI('a*')
     match_list.append(uri)
     assert uri.match('a')
     assert uri.match('a.b')
     assert uri.match('b') == False
 
-    # Test context wildcard suffix matches
+    # Test implicit wildcard suffix matches
     uri = WAMPURI('a**')
     match_list.append(uri)
     assert uri.match('a')
     assert uri.match('a.b')
     assert uri.match('b') == False
+
+    # Test implicit exact matches
+    uri = WAMPURI('a.*.b')
+    match_list.append(uri)
+    assert uri.match('a.c.b')
+    assert uri.match('a.q.d') == False
 
     # Test explicit exact matches
     uri = WAMPURI('a.*.b',options={'match':'exact'})
@@ -33,7 +42,7 @@ def test_matching():
     assert uri.match('a.*.d') == False
 
     # Test explicit prefix matches
-    uri = WAMPURI('a.b',options={'match':'wildcard'})
+    uri = WAMPURI('a.b',options={'match':'prefix'})
     match_list.append(uri)
     assert uri.match('a.b')
     assert uri.match('a.d.b') == False

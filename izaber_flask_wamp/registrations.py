@@ -72,13 +72,17 @@ class WAMPRegistrations(object):
         # Use the first matched handler
         handler = handlers[0]
 
+        details = {
+            'procedure': uri,
+        }
+
         if handler['type'] == 'local':
             def thread_run():
                 try:
                     result = handler['callback'](*args,**kwargs)
                     callback(RESULT(
                         request_id = request.request_id,
-                        details = {},
+                        details = details,
                         args = [ result ],
                         kwargs = {}
                     ))
@@ -86,7 +90,7 @@ class WAMPRegistrations(object):
                     callback(ERROR(
                         request_code = WAMP_INVOCATION,
                         request_id = request.request_id,
-                        details = {},
+                        details = details,
                         error = uri,
                         args = [u'Call failed: {}'.format(ex)],
                     ))
@@ -99,7 +103,7 @@ class WAMPRegistrations(object):
                 if result == WAMP_YIELD:
                     callback(RESULT(
                         request_id = request.request_id,
-                        details = {},
+                        details = details,
                         args = result.args,
                         kwargs = result.kwargs
                     ))
@@ -115,7 +119,7 @@ class WAMPRegistrations(object):
                 INVOCATION(
                     request_id=request.request_id,
                     registration_id=registration_id,
-                    details={}
+                    details=details
                 ),
                 on_yield
             )
@@ -190,9 +194,6 @@ class WAMPRegistrations(object):
         """ Removes a client from all registrations and subcriptions
             Usually used when a client disconnects
         """
-        for uri, handler in self.registered.items():
-            if handler['type'] == 'local':
-                continue
-            if handler['client'] == client:
-                del self.registered[uri]
+        self.registered.remove(lambda r: r.get('client') == client)
+        self.subscribed.remove(lambda r: r.get('client') == client)
 

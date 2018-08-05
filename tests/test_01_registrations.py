@@ -56,6 +56,7 @@ def test_register():
     invoke_result = regs.invoke(call_message,on_yield)
 
     assert data_capture['result'].args[0] == 'TEST'
+    assert data_capture['result']['details']['procedure'] == 'arf'
 
     # Can we unregister?
     unregister_id = regs.unregister(registration_id)
@@ -127,8 +128,10 @@ def test_register():
     invoke_result = regs.invoke(call_message,on_yield)
     assert data_capture['result'] == WAMP_ERROR
 
-    unregister_id = regs.unregister(registration_id)
-    assert unregister_id == registration_id
+    # Ensure we can reap
+    assert len(regs.registered) == 1
+    regs.reap_client(client)
+    assert len(regs.registered) == 0
 
 
 def test_subscriptions():
@@ -209,4 +212,11 @@ def test_subscriptions():
                         ))
 
     assert client.received_message == None
+
+    # Ensure we can reap
+    subscription_id = regs.subscribe_remote('woof',client)
+    assert subscription_id != None
+    assert len(regs.subscribed) == 1
+    regs.reap_client(client)
+    assert len(regs.subscribed) == 0
 

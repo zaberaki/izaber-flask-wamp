@@ -2,6 +2,12 @@ import random
 import six
 from six.moves import queue
 
+STATE_DISCONNECTED = 0
+STATE_CONNECTING = 1
+STATE_WEBSOCKET_CONNECTED = 3
+STATE_AUTHENTICATING = 4
+STATE_CONNECTED = 2
+
 ###########################################
 # Data mangling and syntax sugar classes
 ###########################################

@@ -53,7 +53,12 @@ class WAMPURI(object):
             return
 
         # Now look for wildcards within the uri
-        elements = map(re.escape,self.match_uri.split('*'))
+        elements = list(map(re.escape,self.match_uri.split('*')))
+        if len(elements) == 1 and not self.scheme:
+            self.scheme = 'exact'
+            return
+
+
         regex = "^" + ".*".join(elements)
         if not self.prefix:
             regex += '$'
@@ -79,10 +84,6 @@ class WAMPURI(object):
 
         elif self.scheme == 'exact':
             return uri == self.uri
-
-        # URIs are matching
-        if uri == self.match_uri:
-            return True
 
         return False
 
