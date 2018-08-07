@@ -16,6 +16,8 @@ class WAMPServiceClient(object):
         self._requests_pending = {}
         self.timeout = 1
         self.wamp = wamp
+        self.authmethod = None
+        self.authrole = 'anonymous'
 
     def closed(self):
         """ Returns true if closed
@@ -118,6 +120,7 @@ class WAMPServiceClient(object):
 
             self.state = STATE_CONNECTED
             self.authprovider = self.authenticator.authmethod
+            self.authrole = role
             self.realm = self.auth_hello.realm
             message = WELCOME(
                         session_id=self.session_id,
@@ -168,6 +171,7 @@ class WAMPServiceClient(object):
                 subscription_id=subscription_id
             ))
         except Exception as ex:
+            traceback.print_exc()
             self.send_message(ERROR(
                         request_code = WAMP_SUBSCRIBE,
                         request_id = request_id,

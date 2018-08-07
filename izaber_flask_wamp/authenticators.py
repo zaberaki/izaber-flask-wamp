@@ -30,7 +30,7 @@ class Authenticator(object):
 class TicketAuthenticator(Authenticator):
     authmethod = 'ticket'
 
-    def ticket_authorize(self,username,password):
+    def ticket_authenticate(self,username,password):
         """ Return the role if the user authenticates successfully.
             Return None if unable to authenticate
 
@@ -41,7 +41,7 @@ class TicketAuthenticator(Authenticator):
         return None
 
     def authenticate_challenge_response(self,hello,challenge,authenticate):
-        return self.ticket_authorize(
+        return self.ticket_authenticate(
                     hello.details['authid'],
                     authenticate.signature
                 )
@@ -61,16 +61,38 @@ class SimpleTicketAuthenticator(TicketAuthenticator):
                     password: 'PASSWORDn',
                     role: 'ROLENAMEn'
                 },
-
-
             ]
-        """
-        self.users = users
-        self.users_lookup = {}
-        for user in users:
-            self.users_lookup[user['login']] = user
 
-    def ticket_authorize(self,username,password):
+            This can also handle hash entries as well of
+            the form:
+
+            users = {
+                'USERNAME1': {
+                    'password': 'PASSWORD1',
+                    'role': 'ROLENAME1',
+                },
+                ...
+                'USERNAMEn': {
+                    'password': 'PASSWORDn',
+                    'role': 'ROLENAMEn',
+                },
+            }
+        """
+        if isinstance(users,list):
+            self.users = users
+            self.users_lookup = {}
+            for user in users:
+                self.users_lookup[user['login']] = user
+        else:
+            self.users = []
+            self.users_lookup = {}
+            for login, data in users.items():
+                user_rec = dict(data)
+                user_rec['login'] = login
+                self.users.append(user_rec)
+                self.users_lookup[login] = user_rec
+
+    def ticket_authenticate(self,username,password):
         """ Return the role if the user authenticates successfully.
             Return None if unable to authenticate
 

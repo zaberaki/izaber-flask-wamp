@@ -137,7 +137,6 @@ class FlaskAppWrapper(object):
                         args = [],
                     ))
 
-
     def unregister(self,uri):
         """ Remove the uri from the call pool
         """
@@ -146,7 +145,14 @@ class FlaskAppWrapper(object):
     def subscribe_remote(self,uri,client,options=None):
         """ Registers a callback URI
         """
-        perms = self.authorizers.authorize(client,uri,'subscribe')
+        session = {
+            'realm': client.realm,
+            'authprovider': 'dynamic',
+            'authrole': client.authrole,
+            'authmethod': client.authmethod,
+            'session': client.session_id,
+        }
+        perms = self.authorizers.authorize(session,uri,'subscribe')
         if not perms['allow']:
             raise Exception("Not Allowed")
         return self.registrations.subscribe_remote(uri,client,options)
