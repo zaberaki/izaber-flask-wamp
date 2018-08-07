@@ -1,3 +1,5 @@
+import traceback
+
 from swampyer.messages import *
 
 from izaber.log import log
@@ -60,26 +62,79 @@ class WAMPServiceClient(object):
 
         # We only trigger authentications if the app has users
         # setup.
-        if self.app.users and hello.details['authmethods']:
+        if hello.details.get('authmethods'):
             self.state = STATE_AUTHENTICATING
-            challenge = self.app.auth_method_prepare(self,hello)
-            if not challenge:
+            self.auth_hello = hello
+
+            try:
+                authenticator = self.app.authenticators.select(hello)
+                if not authenticator:
+                    raise Exception('No Authenticator Found')
+                challenge = authenticator.create_challenge(hello)
+                self.auth_challenge = challenge
+                self.authenticator = authenticator
+            except Exception as ex:
+                print("OOPS:", ex)
                 return ERROR(
                         request_code = WAMP_HELLO,
                         request_id = None,
                         details = {},
-                        error = 'None of the authmethods are support. We only support ticket ',
+                        error = 'No authentication scheme found',
                         args = [],
                     )
             return self.dispatch_to_awaiting(challenge)
 
         self.state = STATE_CONNECTED
         details = self.app.auth_details(self,'anonymous','anonymous')
+        self.realm = hello.realm
+        self.authmethod = 'anonymous'
+        self.authrole = 'anonymous'
 
         self.dispatch_to_awaiting(WELCOME(
                     session_id=self.session_id,
                     details=details
                 ))
+
+    def handle_authenticate(self, response):
+        """ When a client responds to a challenge request
+        """
+        try:
+            if not self.authenticator:
+                raise Exception('No authenticator associated!')
+
+            role = self.authenticator.authenticate_challenge_response(
+                        self.auth_hello,
+                        self.auth_challenge,
+                        response
+                    )
+            if not role:
+                raise Exception('Invalid authentication')
+
+            details = self.app.auth_details(
+                            self.app,
+                            self.auth_hello.details['authid'],
+                            role
+                        )
+
+            self.state = STATE_CONNECTED
+            self.authprovider = self.authenticator.authmethod
+            self.realm = self.auth_hello.realm
+            message = WELCOME(
+                        session_id=self.session_id,
+                        details=details
+                    )
+
+            self.dispatch_to_awaiting(message)
+
+        except Exception as ex:
+            self.dispatch_to_awaiting(ERROR(
+                    request_code = WAMP_AUTHENTICATE,
+                    request_id = None,
+                    details = {},
+                    error = 'Authentication failed',
+                    args = [],
+                ))
+
 
     def handle_register(self, register):
         """ When a client would like to a register a RPC
@@ -102,23 +157,24 @@ class WAMPServiceClient(object):
             self.dispatch_to_awaiting(result)
         self.app.call( request, on_yield )
 
-    def handle_authenticate(self, response):
-        """ When a client responds to a challenge request
-        """
-        result = self.server.auth_method_authenticate(self,response)
-        if result:
-            self.state = STATE_CONNECTED
-        self.dispatch_to_awaiting(result)
-
     def handle_subscribe(self, request):
         """ Hey! I want to hear about information on this URI
         """
         request_id = request.request_id
-        subscription_id = self.app.subscribe_remote(request.topic,self)
-        self.send_message(SUBSCRIBED(
-            request_id = request_id,
-            subscription_id=subscription_id
-        ))
+        try:
+            subscription_id = self.app.subscribe_remote(request.topic,self)
+            self.send_message(SUBSCRIBED(
+                request_id = request_id,
+                subscription_id=subscription_id
+            ))
+        except Exception as ex:
+            self.send_message(ERROR(
+                        request_code = WAMP_SUBSCRIBE,
+                        request_id = request_id,
+                        details = {},
+                        error = 'Not Subscribed',
+                        args = [],
+                    ))
 
     def handle_publish(self, request):
         """ Hey! I have information that someone may want to hear
@@ -158,6 +214,17 @@ class WAMPServiceClient(object):
         log.debug("SND>: {}".format(message))
         self.ws.send(message)
 
+    def receive_message(self,message):
+        log.debug("<RCV: {}".format(message.dump()))
+        try:
+            code_name = message.code_name.lower()
+            handler_name = "handle_"+code_name
+            handler_function = getattr(self,handler_name)
+            handler_function(message)
+        except AttributeError as ex:
+            traceback.print_exc()
+            self.handle_unknown(message)
+
     def run(self):
         self.wamp.do_wamp_connect(self)
         while not self.ws.closed:
@@ -167,15 +234,7 @@ class WAMPServiceClient(object):
             try:
                 log.debug("<RCV: {}".format(data))
                 message = WampMessage.loads(data)
-                log.debug("<RCV: {}".format(message.dump()))
-                try:
-                    code_name = message.code_name.lower()
-                    handler_name = "handle_"+code_name
-                    handler_function = getattr(self,handler_name)
-                    handler_function(message)
-                except AttributeError as ex:
-                    traceback.print_exc()
-                    self.handle_unknown(message)
+                self.receive_message(message)
             except Exception as ex:
                 # FIXME: Needs more granular exception handling
                 self.wamp.do_wamp_disconnect(self)

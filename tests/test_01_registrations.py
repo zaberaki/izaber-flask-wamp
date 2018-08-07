@@ -26,9 +26,6 @@ def test_register():
 
     assert regs != None
 
-    regs.set_uri_base('test.foo')
-    assert regs.uri_base == 'test.foo.'
-
     ##########################################
     # Test registrations
     ##########################################
@@ -139,9 +136,6 @@ def test_subscriptions():
     regs = WAMPRegistrations()
 
     assert regs != None
-
-    regs.set_uri_base('test.foo')
-    assert regs.uri_base == 'test.foo.'
 
     ##########################################
     # Test subscriptions

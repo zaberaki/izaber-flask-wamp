@@ -1,6 +1,6 @@
 from .app import *
 
-class IZaberFlaskWAMP(object):
+class IZaberFlaskLocalWAMP(object):
     """ Allows the creation and sending of calls and functions
     """
     def __init__(self,sockets,app):
@@ -10,11 +10,12 @@ class IZaberFlaskWAMP(object):
         self.on_connect = []
         self.on_disconnect = []
 
+
     def register(self,uri,options=None):
         """ A method to use a decorator to register a callback
         """
         def actual_register_decorator(f):
-            app.register_local(uri, f, options)
+            self.app.register_local(uri, f, options)
             return f
         return actual_register_decorator
 
@@ -22,12 +23,12 @@ class IZaberFlaskWAMP(object):
         """ A method to use a decorator to subscribe a callback
         """
         def actual_subscribe_decorator(f):
-            app.subscribe_local(uri, f, options)
+            self.app.subscribe_local(uri, f, options)
             return f
         return actual_subscribe_decorator
 
     def publish(self,topic,options=None,args=None,kwargs=None):
-        app.publish(PUBLISH(
+        self.app.publish(PUBLISH(
             options=options or {},
             topic=topic,
             args=args or [],

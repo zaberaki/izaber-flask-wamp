@@ -2,6 +2,8 @@ import random
 import six
 from six.moves import queue
 
+from swampyer.messages import *
+
 STATE_DISCONNECTED = 0
 STATE_CONNECTING = 1
 STATE_WEBSOCKET_CONNECTED = 3
@@ -56,6 +58,9 @@ class Listable(object):
         removed = list(self.filter(filter_function))
         self.data = list(self.filter(lambda d: not filter_function(d)))
         return removed
+
+    def sort(self,key):
+        self.data.sort(key=key)
 
     def append(self,item):
         self.data.append(item)

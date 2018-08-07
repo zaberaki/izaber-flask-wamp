@@ -1,22 +1,11 @@
 import threading
 
-from swampyer.messages import *
-
 from .uri import *
 
 class WAMPRegistrations(object):
     def __init__(self):
         self.registered = WAMPURIList()
         self.subscribed = WAMPURIList()
-
-    def set_uri_base(self,uri_base):
-        """ Sets up the base URI that the system will default to
-            when locally making registrations/calls/etc.
-        """
-        if uri_base:
-            self.uri_base = uri_base + '.'
-        else:
-            self.uri_base = ''
 
     def register_local(self,uri,callback,options=None):
         """ Registers a local function for handling requests.
@@ -36,8 +25,6 @@ class WAMPRegistrations(object):
         """ Adds a client that's offering to support a particular
             callback on a uri
         """
-        if self.uri_base and uri.startswith(self.uri_base):
-            uri = uri.replace(self.uri_base,'',1)
         registration_id = secure_rand()
         self.registered.append(
             WAMPURI(uri,{
@@ -61,11 +48,7 @@ class WAMPRegistrations(object):
         args = request.args
         kwargs = request.kwargs
 
-        uri_normalized = uri
-        if self.uri_base and uri.startswith(self.uri_base):
-            uri_normalized = uri.replace(self.uri_base,'',1)
-
-        handlers = self.registered.match(uri_normalized)
+        handlers = self.registered.match(uri)
         if not handlers:
             raise Exception('uri does not exist')
 
@@ -143,8 +126,6 @@ class WAMPRegistrations(object):
         """ Registers a remote function to be invoked when the URI
             matches a particular pattern
         """
-        if self.uri_base and uri.startswith(self.uri_base):
-            uri = uri.replace(self.uri_base,'',1)
         subscription_id = secure_rand()
         sub_uri = WAMPURI(uri,{
                         'subscription_id': subscription_id,
@@ -167,17 +148,18 @@ class WAMPRegistrations(object):
         uri = request.topic
         publish_id = secure_rand()
 
-        uri_normalized = uri
-        if self.uri_base and uri.startswith(self.uri_base):
-            uri_normalized = uri.replace(self.uri_base,'',1)
+        details = {
+            'topic': uri
+        }
 
-        subscribers = self.subscribed.match(uri_normalized)
+        subscribers = self.subscribed.match(uri)
         for subscriber in subscribers:
             publish_event = EVENT(
                 subscription_id = subscriber['subscription_id'],
                 publish_id = publish_id,
                 args = request.args,
                 kwargs = request.kwargs,
+                details = details,
             )
             if subscriber['type'] == 'local':
                 subscriber['callback'](publish_event)

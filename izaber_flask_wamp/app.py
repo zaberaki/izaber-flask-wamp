@@ -6,32 +6,41 @@ from izaber import config
 import izaber.flask
 
 from .registrations import *
+from .authenticators import *
+from .authorizers import *
 
 class FlaskAppWrapper(object):
     def __init__(self,app,users=None):
         self.__dict__.update(dict(
             _app = app,
-            users = users or [],
         ))
+
+        # Used by WS to ensure we allow the wamp protocol to connect
         app.allowed_protocol = 'wamp.2.json'
 
+        # Used to verify users. Used by Challenge
+        self.authenticators = WAMPAuthenticators()
+
+        # The current list of clients connected, should be a list
+        # of WAMPServiceClient instances
         self.clients = []
+
+        # To track subscriptions and registrations
         self.registrations = WAMPRegistrations()
-        self.subscriptions = {}
+
+        # Used to verify who can access what resources
+        self.authorizers = WAMPAuthorizers()
 
     def client_add(self,client):
         self.clients.append(client)
 
-    def run(self, host=None, port=None, debug=None, uri_base=None, **options):
+    def run(self, host=None, port=None, debug=None, **options):
         if host is None:
             host = config.flask.host
         if port is None:
             port = config.flask.port
         if debug is None:
             debug = config.debug
-        if uri_base is None:
-            uri_base = config.flask.wamp.uri_base
-        self.uri_base = uri_base
 
         server = pywsgi.WSGIServer(
                         (host, port),
@@ -40,16 +49,16 @@ class FlaskAppWrapper(object):
                     )
         server.serve_forever()
 
-    def finalize_wamp_setup(self,realm='izaber',uri_base=''):
+    def finalize_wamp_setup(self,realm='izaber'):
         self.realm = realm
-        self.registrations.set_uri_base(uri_base)
 
-    def auth_details(self,ws,authid,authrole):
+    def auth_details(self,ws,authid,authrole='anonymous'):
+
         return {
             u'authid': authid,
             u'authmethod': u'ticket',
             u'authprovider': u'dynamic',
-            u'authrole': u'anonymous',
+            u'authrole': authrole,
             u'realm': self.realm,
             u'roles': {u'broker': {u'features': {
                                                  u'event_retention': False,
@@ -79,85 +88,35 @@ class FlaskAppWrapper(object):
             u'x_cb_node_id': None
         }
 
+    def authorize(self,client,uri,action,options=None):
+        """ Checks to see if the client is authorized to access
+            this particular URI
+        """
+        session = {
+            'realm': client.realm,
+            'authprovider': 'dynamic',
+            'authrole': client.authrole,
+            'authmethod': client.authmethod,
+            'session': client.session_id,
+        }
+        return self.authorizers.authorize(session,uri,action,options)
+
     def generate_request_id(self):
         """ We cheat, we just use the millisecond timestamp for the request
         """
         return int(round(time.time() * 1000))
 
-    def auth_method_prepare(self,client,message):
-        """ Returns the auth method the client should use for
-            authentication
-        """
-        if not self.users:
-            return
-
-        if 'ticket' not in message.details.get('authmethods',[]):
-            return ERROR(
-                        request_code = WAMP_HELLO,
-                        request_id = None,
-                        details = {},
-                        error = 'Unable to authenticate',
-                        args = [],
-                    )
-
-        client.auth_method = 'ticket'
-        client.authid = message.details['authid']
-        return CHALLENGE(
-                        auth_method='ticket',
-                        extra={}
-                    )
-
-    def auth_method_authenticate(self,client,response):
-        """ Does the actual work of authenticating the user
-        """
-        if client.auth_method != 'ticket':
-            return ERROR(
-                request_code = WAMP_AUTHENTICATE,
-                request_id = None,
-                details = {},
-                error = 'Non ticket based authentication not supported',
-                args = [],
-            )
-
-        authid = client.authid
-        generic_auth_error = ERROR(
-                                request_code = WAMP_AUTHENTICATE,
-                                request_id = None,
-                                details = {},
-                                error = 'Unable to authenticate',
-                                args = [],
-                            )
-        if authid not in self.users:
-            return generic_auth_error
-
-        user_data = self.users[authid]
-        password = user_data.get('password',None)
-        if not password:
-            return generic_auth_error
-
-        if response.signature != password:
-            return generic_auth_error
-
-        # Okay the person is why they say they are.
-        client.user_data = user_data
-        details = self.auth_details(
-                        self.client,
-                        authid,
-                        authid
-                    )
-
-        return WELCOME(
-            session_id=client.session_id,
-            details=details
-        )
-
     def register_remote(self,uri,client):
         """ Registers a callback URI
         """
+        perms = self.authorizers.authorize(client,uri,'register')
+        if not perms['allow']:
+            raise Exception("Not Allowed")
         return self.registrations.register_remote(uri,client)
 
     def register_local(self,uri,callback,options=None):
         """ Takes a local function and registers it in the callbacks table
+            Note that we don't test local for registration. We just allow it
         """
         return self.registrations.register_local(uri,callback,options)
 
@@ -184,15 +143,18 @@ class FlaskAppWrapper(object):
         """
         return self.registrations.unregister(uri)
 
-    def subscribe_remote(self,uri,client):
+    def subscribe_remote(self,uri,client,options=None):
         """ Registers a callback URI
         """
-        return self.registrations.subscribe_remote(uri,client)
+        perms = self.authorizers.authorize(client,uri,'subscribe')
+        if not perms['allow']:
+            raise Exception("Not Allowed")
+        return self.registrations.subscribe_remote(uri,client,options)
 
-    def subscribe_local(self,uri,callback):
+    def subscribe_local(self,uri,callback,options=None):
         """ Takes a local function and subscribes it in the callbacks table
         """
-        return self.registrations.subscribe_local(uri,callback)
+        return self.registrations.subscribe_local(uri,callback,options)
 
     def unsubscribe(self,uri):
         pass
@@ -205,7 +167,5 @@ class FlaskAppWrapper(object):
 
     def __setattr__(self,k,v):
         return setattr(self._app,k,v)
-
-app = FlaskAppWrapper(izaber.flask.app)
 
 

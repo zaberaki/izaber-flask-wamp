@@ -17,6 +17,7 @@ import izaber.flask
 from .common import *
 from .uri import *
 from .registrations import *
+from .authorizers import *
 from .app import *
 from .wamp import *
 from .client import *
@@ -32,11 +33,31 @@ default:
     flask:
         wamp:
             realm: izaber
-            uri_base: com.izaber.wamp
 """
 
+
+"""
+
+Class Hierarchy:
+
+- flask.Flask
+  - IZaberFlask
+
+- flask.Blueprint
+  - IZaberFlask
+
+base_app = IZaberFlask() - The subclassed flask.Flask
+
+socktes = Sockets(app)
+wamp = IZaberFlaskWAMP(sockets,base_app)
+
+myapp = IZaberFlask(__name__)
+
+"""
+
+app = FlaskAppWrapper(izaber.flask.app)
 sockets = Sockets(izaber.flask.app)
-wamp = IZaberFlaskWAMP(sockets,app)
+wamp = IZaberFlaskLocalWAMP(sockets,app)
 
 izaber_flask = None
 class IZaberFlask(flask.Blueprint):
@@ -60,6 +81,11 @@ class IZaberFlask(flask.Blueprint):
     def run(self,*args,**kwargs):
         app.run(*args,**kwargs)
 
+class IZaberFlaskPermissive(IZaberFlask):
+    def __init__(self,*args,**kwargs):
+        super(IZaberFlaskPermissive,self).__init__(*args,**kwargs)
+        app.authorizers.append(WAMPAuthorizeEverything('*'))
+
 
 @sockets.route('/ws')
 def echo_socket(ws):
@@ -79,7 +105,6 @@ def load_config(**kwargs):
     # before config loads causing a bit of an annoyance
     app.finalize_wamp_setup(
             realm=config.flask.wamp.realm,
-            uri_base=config.flask.wamp.uri_base,
         )
 
     # Register any app we've created as well
