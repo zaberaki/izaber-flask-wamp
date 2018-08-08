@@ -8,7 +8,7 @@ from .common import *
 
 class WAMPServiceClient(object):
 
-    def __init__(self,app,ws,wamp):
+    def __init__(self,app,ws,wamp,cookies):
         self.ws = ws
         self.state = STATE_CONNECTING
         self.app = app
@@ -16,8 +16,8 @@ class WAMPServiceClient(object):
         self._requests_pending = {}
         self.timeout = 1
         self.wamp = wamp
-        self.authmethod = None
-        self.authrole = 'anonymous'
+        self.cookies = cookies
+        self.auth = DictObject()
 
     def closed(self):
         """ Returns true if closed
@@ -66,15 +66,35 @@ class WAMPServiceClient(object):
         # setup.
         if hello.details.get('authmethods'):
             self.state = STATE_AUTHENTICATING
+
+            # Is there some way we can immediately authenticate?
+            authorized = self.app.authenticators.authenticate_on_hello(self,hello)
+
+            # Awesome, we can authenticate. Let's finish the authentication
+            # off. FIXME: Duplicated code with handle_authorization
+            if authorized:
+                self.state = STATE_CONNECTED
+                self.auth = authorized
+
+                details = self.app.auth_details( self.app, authorized.authid, authorized.role)
+                message = WELCOME(
+                            session_id=self.session_id,
+                            details=details
+                        )
+
+                self.wamp.do_wamp_authenticated(self)
+                self.app.authenticators.on_successful_authenticate(self,authorized)
+                return self.dispatch_to_awaiting(message)
+
+            # Okay, so we didn't manage to authenticate, let's hand over
+            # the request to the challenge response system.
             self.auth_hello = hello
 
             try:
-                authenticator = self.app.authenticators.select(hello)
-                if not authenticator:
+                challenge = self.app.authenticators.create_challenge(self,hello)
+                if not challenge :
                     raise Exception('No Authenticator Found')
-                challenge = authenticator.create_challenge(hello)
                 self.auth_challenge = challenge
-                self.authenticator = authenticator
             except Exception as ex:
                 print("OOPS:", ex)
                 return ERROR(
@@ -88,9 +108,7 @@ class WAMPServiceClient(object):
 
         self.state = STATE_CONNECTED
         details = self.app.auth_details(self,'anonymous','anonymous')
-        self.realm = hello.realm
-        self.authmethod = 'anonymous'
-        self.authrole = 'anonymous'
+        self.auth = DictObject()
 
         self.dispatch_to_awaiting(WELCOME(
                     session_id=self.session_id,
@@ -101,33 +119,26 @@ class WAMPServiceClient(object):
         """ When a client responds to a challenge request
         """
         try:
-            if not self.authenticator:
-                raise Exception('No authenticator associated!')
-
-            role = self.authenticator.authenticate_challenge_response(
+            authorized = self.app.authenticators.authenticate_challenge_response(
+                        self,
                         self.auth_hello,
                         self.auth_challenge,
                         response
                     )
-            if not role:
+            if not authorized:
                 raise Exception('Invalid authentication')
 
-            details = self.app.auth_details(
-                            self.app,
-                            self.auth_hello.details['authid'],
-                            role
-                        )
-
             self.state = STATE_CONNECTED
-            self.authprovider = self.authenticator.authmethod
-            self.authrole = role
-            self.realm = self.auth_hello.realm
+            self.auth = authorized
+            details = self.app.auth_details( self.app, authorized.authid, authorized.role)
             message = WELCOME(
                         session_id=self.session_id,
                         details=details
                     )
 
-            self.dispatch_to_awaiting(message)
+            self.wamp.do_wamp_authenticated(self)
+            self.app.authenticators.on_successful_authenticate(self,authorized)
+            return self.dispatch_to_awaiting(message)
 
         except Exception as ex:
             self.dispatch_to_awaiting(ERROR(

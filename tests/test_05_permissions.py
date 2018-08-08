@@ -26,7 +26,7 @@ def test_auth():
     app = FlaskAppWrapper(mock_app)
     ws = MockWebsocket()
     wamp = MockWamp()
-    client = WAMPServiceClient(app,ws,wamp)
+    client = WAMPServiceClient(app,ws,wamp,{})
 
     # Currently use anonymous authentication and we want
     # the client to login
@@ -35,7 +35,8 @@ def test_auth():
                         details={}
                     )
     # Okay now through the codebase. This should simply
-    # be a hello as we haven't established any authenticators yet
+    # be a hello as we haven't put down any authmethods
+    # without any authmethod it'll just default to anonymous
     client.receive_message(hello_noauth_msg)
     message = WampMessage.loads(ws.last_sent)
     assert message == WAMP_WELCOME

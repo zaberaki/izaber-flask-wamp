@@ -86,10 +86,9 @@ class IZaberFlaskPermissive(IZaberFlask):
         super(IZaberFlaskPermissive,self).__init__(*args,**kwargs)
         app.authorizers.append(WAMPAuthorizeEverything('*'))
 
-
 @sockets.route('/ws')
 def echo_socket(ws):
-    client = WAMPServiceClient(app,ws,wamp)
+    client = WAMPServiceClient(app,ws,wamp,flask.request.cookies)
     client.run()
 
 @initializer('flask_wamp')

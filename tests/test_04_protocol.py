@@ -19,7 +19,9 @@ class MockWebsocket(object):
         self.last_sent = data
 
 class MockWamp(object):
-    pass
+    def do_wamp_authenticated(self,*args):
+        pass
+
 
 def test_connect():
 
@@ -27,7 +29,7 @@ def test_connect():
     app = FlaskAppWrapper(mock_app)
     ws = MockWebsocket()
     wamp = MockWamp()
-    client = WAMPServiceClient(app,ws,wamp)
+    client = WAMPServiceClient(app,ws,wamp,{})
 
     # Setup the ticket authenticators
     ticket_auth = SimpleTicketAuthenticator([

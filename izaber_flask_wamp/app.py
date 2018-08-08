@@ -93,10 +93,10 @@ class FlaskAppWrapper(object):
             this particular URI
         """
         session = {
-            'realm': client.realm,
+            'realm': client.auth.realm,
             'authprovider': 'dynamic',
-            'authrole': client.authrole,
-            'authmethod': client.authmethod,
+            'authrole': client.auth.authrole,
+            'authmethod': client.auth.authmethod,
             'session': client.session_id,
         }
         return self.authorizers.authorize(session,uri,action,options)
@@ -146,10 +146,10 @@ class FlaskAppWrapper(object):
         """ Registers a callback URI
         """
         session = {
-            'realm': client.realm,
+            'realm': client.auth.realm,
             'authprovider': 'dynamic',
-            'authrole': client.authrole,
-            'authmethod': client.authmethod,
+            'authrole': client.auth.authrole,
+            'authmethod': client.auth.authmethod,
             'session': client.session_id,
         }
         perms = self.authorizers.authorize(session,uri,'subscribe')

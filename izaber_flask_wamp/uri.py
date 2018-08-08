@@ -58,7 +58,6 @@ class WAMPURI(object):
             self.scheme = 'exact'
             return
 
-
         regex = "^" + ".*".join(elements)
         if not self.prefix:
             regex += '$'

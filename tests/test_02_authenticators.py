@@ -4,7 +4,12 @@ from swampyer.messages import *
 
 from izaber_flask_wamp.authenticators import *
 
+class MockClient(object):
+    pass
+
 def test_connect():
+
+    mock_client = MockClient()
 
     # Setup the ticket authenticators
     ticket_auth = SimpleTicketAuthenticator([
@@ -28,29 +33,31 @@ def test_connect():
                     )
 
     # Ensure we get a challenge from the authen object
-    challenge_msg = ticket_auth.create_challenge(hello_msg)
+    challenge_msg = ticket_auth.create_challenge(mock_client,hello_msg)
     assert challenge_msg  == WAMP_CHALLENGE
 
     # And ensure we can authenciate via the base object
     authenticate_msg = AUTHENTICATE(
                             signature = 'password'
                         )
-    role = ticket_auth.authenticate_challenge_response(
+    authorized = ticket_auth.authenticate_challenge_response(
+                                    mock_client,
                                     hello_msg,
                                     challenge_msg,
                                     authenticate_msg
                                 )
-    assert role == 'backend'
+    assert authorized.role == 'backend'
 
     # How about a bad password?
     bad_authenticate_msg = AUTHENTICATE(
                             signature = 'rumplestiltskin'
                         )
-    role = ticket_auth.authenticate_challenge_response(
+    authorized = ticket_auth.authenticate_challenge_response(
+                                    mock_client,
                                     hello_msg,
                                     challenge_msg,
                                     bad_authenticate_msg
                                 )
-    assert role == None
+    assert authorized == None
 
 

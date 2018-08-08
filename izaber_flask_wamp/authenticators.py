@@ -15,20 +15,38 @@ class Authenticator(object):
     def __init__(self):
         pass
 
-    def create_challenge(self,hello):
+    def create_challenge(self,client,hello):
         """ Return the CHALLENGE object to be sent to the
-            user
+            user. This module doesn't do any challenges
+            so we return None
+        """
+        return
+
+    def authenticate_on_hello(self,client,hello):
+        return
+
+    def authenticate_challenge_response(self,client,hello,challenge,authenticate):
+        return
+
+    def on_successful_authenticate(self,client,authorized):
+        """ This should be called when a successful authentication
+            takes place
+        """
+        return
+
+class TicketAuthenticator(Authenticator):
+    authmethod = 'ticket'
+
+    def create_challenge(self,client,hello):
+        """ Return the CHALLENGE object to be sent to the
+            user. This module does ticket based challenges so we'll
+            return that to the user
         """
         return CHALLENGE(
                         auth_method='ticket',
                         extra={}
                     )
 
-    def authenticate_challenge_response(self,hello,challenge,authenticate):
-        pass
-
-class TicketAuthenticator(Authenticator):
-    authmethod = 'ticket'
 
     def ticket_authenticate(self,username,password):
         """ Return the role if the user authenticates successfully.
@@ -40,8 +58,9 @@ class TicketAuthenticator(Authenticator):
         """
         return None
 
-    def authenticate_challenge_response(self,hello,challenge,authenticate):
+    def authenticate_challenge_response(self,client,hello,challenge,authenticate):
         return self.ticket_authenticate(
+                    hello.realm,
                     hello.details['authid'],
                     authenticate.signature
                 )
@@ -92,8 +111,8 @@ class SimpleTicketAuthenticator(TicketAuthenticator):
                 self.users.append(user_rec)
                 self.users_lookup[login] = user_rec
 
-    def ticket_authenticate(self,username,password):
-        """ Return the role if the user authenticates successfully.
+    def ticket_authenticate(self,realm,username,password):
+        """ Return the authenticated object if the user authenticates successfully.
             Return None if unable to authenticate
 
             challenge is the server's challenge request
@@ -103,9 +122,19 @@ class SimpleTicketAuthenticator(TicketAuthenticator):
         if not user: return
 
         if user['password'] == password:
-            return user['role']
+            return DictObject(
+                authid=username,
+                authprovider='dynamic',
+                authmethod=self.authmethod,
+                role=user['role'],
+                realm=realm,
+            )
 
         return
+
+class CookieAuthenticator(Authenticator):
+    def authenticate_on_hello(self,client,hello):
+        cookie = client.cookies.get()
 
 class WAMPAuthenticators(Listable):
     def select(self,hello):
@@ -123,4 +152,58 @@ class WAMPAuthenticators(Listable):
             return
 
         return matched[0]
+
+    def create_challenge(self,client,hello):
+        """ Find the first appropriate challenge handler and create
+            a challenge response
+        """
+        authmethods = hello.details['authmethods']
+        if not authmethods:
+            return
+
+        self.sort(key=lambda a:a.order)
+
+        matched = self.filter(lambda a:a.authmethod in authmethods)
+        for authenticator in matched:
+            challenge = authenticator.create_challenge(client,hello)
+            if challenge:
+                return challenge
+
+    def authenticate_challenge_response(self,client,hello,challenge,authenticate):
+        authmethods = hello.details['authmethods']
+        if not authmethods:
+            return
+
+        self.sort(key=lambda a:a.order)
+
+        matched = self.filter(lambda a:a.authmethod in authmethods)
+        for authenticator in matched:
+            authenticated = authenticator.authenticate_challenge_response(client,hello,challenge,authenticate)
+            if authenticated:
+                return authenticated
+
+
+    def authenticate_on_hello(self,client,hello):
+        """ Attempt to authenticate based upon the request provided
+        """
+        authmethods = hello.details['authmethods']
+        if not authmethods:
+            return
+
+        self.sort(key=lambda a:a.order)
+
+        matched = self.filter(lambda a:a.authmethod in authmethods)
+        for authenticator in matched:
+            authenticated = authenticator.authenticate_on_hello(client,hello)
+            if authenticated:
+                return authenticated
+        return
+
+    def on_successful_authenticate(self,client,authorized):
+        """ This should be called when a successful authentication
+            takes place. We iterate over all the authorizers just in
+            case they want to do something.
+        """
+        for authenticator in self:
+            authenticator.on_successful_authenticate(client,authorized)
 

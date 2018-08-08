@@ -9,6 +9,7 @@ class IZaberFlaskLocalWAMP(object):
 
         self.on_connect = []
         self.on_disconnect = []
+        self.on_authenticated = []
 
 
     def register(self,uri,options=None):
@@ -40,6 +41,11 @@ class IZaberFlaskLocalWAMP(object):
         """
         return lambda f: self.on_connect.append(f)
 
+    def wamp_authenticated(self):
+        """ A decorator to attach to when someone authenticates
+        """
+        return lambda f: self.on_authenticated.append(f)
+
     def wamp_disconnect(self):
         """ A decorator to attach to when someone disconnects
         """
@@ -49,6 +55,12 @@ class IZaberFlaskLocalWAMP(object):
         """ A decorator to attach to when someone connects
         """
         for f in self.on_connect:
+            f(client)
+
+    def do_wamp_authenticated(self,client):
+        """ A decorator to attach to when someone authenticateds
+        """
+        for f in self.on_authenticated:
             f(client)
 
     def do_wamp_disconnect(self,client):

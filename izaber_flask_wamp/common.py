@@ -10,12 +10,14 @@ STATE_WEBSOCKET_CONNECTED = 3
 STATE_AUTHENTICATING = 4
 STATE_CONNECTED = 2
 
+SESSION_COOKIE = 'zfwid'
+
 ###########################################
 # Data mangling and syntax sugar classes
 ###########################################
 
 class DictObject(dict):
-    def __init__(self, noerror=False, *args, **kwargs):
+    def __init__(self, noerror=True, *args, **kwargs):
         super(DictObject, self).__init__(*args, **kwargs)
         self.__dict__ = self
         self.noerror_ = noerror
