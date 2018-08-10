@@ -1,3 +1,9 @@
+import os
+import json
+
+from izaber.paths import paths
+from izaber.templates import parsestr
+
 from .common import *
 
 # TODO: Make this fit better with Crossbar's actual authentication
@@ -133,8 +139,61 @@ class SimpleTicketAuthenticator(TicketAuthenticator):
         return
 
 class CookieAuthenticator(Authenticator):
+    """ Takes cookies and stores them away for future recall.
+
+        Note that we operate under the expectation that ALL unique
+        connections get a unique cookie.
+
+    """
+    authmethod = 'cookie'
+
+    def __init__(self,cookie_path=None,cookie_name=None):
+        if cookie_path == None:
+            cookie_path = config.paths.cookies
+        self.cookie_path = paths.full_fpath(cookie_path)
+        if not os.path.exists(self.cookie_path):
+            os.makedirs(self.cookie_path)
+        self.cookie_name = cookie_name
+
+    def session_fpath(self,cookie_value):
+        fname = parsestr(config.flask.wamp.cookie_fname,cookie_value=cookie_value)
+        fpath = os.path.join(self.cookie_path,fname)
+        return fpath
+
+    def session_load(self, cookie_value):
+        fpath = self.session_fpath(cookie)
+        if not os.path.exists(fpath):
+            return
+        try:
+            with open(fpath) as f:
+                auth = DictObject(json.load(f))
+                return auth
+        except:
+            return
+
+    def session_save(self, cookie_value, auth):
+        fpath = self.session_fpath(cookie_value)
+        try:
+            with open(fpath,'w') as f:
+                json.dump(f,dict(auth))
+        except:
+            return
+
     def authenticate_on_hello(self,client,hello):
-        cookie = client.cookies.get()
+        auth = client.auth
+        cookie_name = self.cookie_name or client.app.cookie_name
+        cookie_value = client.cookies.get(cookie_name)
+        auth = self.session_load(cookie_value)
+        if auth:
+            client.auth = auth
+            return client.auth
+        except:
+            return
+
+    def on_successful_authenticate(self,client,authorized):
+        auth = client.auth
+        cookie_value = client.cookies.get(self.cookie_name or client.app.cookie_name)
+        self.session_save(cookie_value,auth)
 
 class WAMPAuthenticators(Listable):
     def select(self,hello):
@@ -178,7 +237,11 @@ class WAMPAuthenticators(Listable):
 
         matched = self.filter(lambda a:a.authmethod in authmethods)
         for authenticator in matched:
-            authenticated = authenticator.authenticate_challenge_response(client,hello,challenge,authenticate)
+            authenticated = authenticator.authenticate_challenge_response(
+                                                        client,
+                                                        hello,
+                                                        challenge,
+                                                        authenticate)
             if authenticated:
                 return authenticated
 
@@ -194,7 +257,10 @@ class WAMPAuthenticators(Listable):
 
         matched = self.filter(lambda a:a.authmethod in authmethods)
         for authenticator in matched:
+            print("TESTING WITH:", authenticator)
+            import traceback; traceback.print_stack()
             authenticated = authenticator.authenticate_on_hello(client,hello)
+            print("AUTHENTICATED WITH:", authenticated)
             if authenticated:
                 return authenticated
         return
@@ -204,6 +270,8 @@ class WAMPAuthenticators(Listable):
             takes place. We iterate over all the authorizers just in
             case they want to do something.
         """
+        print("CALLED: on_success_authenticate")
         for authenticator in self:
+            print("UPDATING SUCCESS:",authenticator)
             authenticator.on_successful_authenticate(client,authorized)
 

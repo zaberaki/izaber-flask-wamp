@@ -68,22 +68,22 @@ class WAMPServiceClient(object):
             self.state = STATE_AUTHENTICATING
 
             # Is there some way we can immediately authenticate?
-            authorized = self.app.authenticators.authenticate_on_hello(self,hello)
+            authenticated = self.app.authenticators.authenticate_on_hello(self,hello)
 
             # Awesome, we can authenticate. Let's finish the authentication
             # off. FIXME: Duplicated code with handle_authorization
-            if authorized:
+            if authenticated:
                 self.state = STATE_CONNECTED
-                self.auth = authorized
+                self.auth = authenticated
 
-                details = self.app.auth_details( self.app, authorized.authid, authorized.role)
+                details = self.app.auth_details( self.app, authenticated.authid, authenticated.role)
                 message = WELCOME(
                             session_id=self.session_id,
                             details=details
                         )
 
                 self.wamp.do_wamp_authenticated(self)
-                self.app.authenticators.on_successful_authenticate(self,authorized)
+                self.app.authenticators.on_successful_authenticate(self,authenticated)
                 return self.dispatch_to_awaiting(message)
 
             # Okay, so we didn't manage to authenticate, let's hand over
@@ -119,25 +119,26 @@ class WAMPServiceClient(object):
         """ When a client responds to a challenge request
         """
         try:
-            authorized = self.app.authenticators.authenticate_challenge_response(
+            authenticated = self.app.authenticators.authenticate_challenge_response(
                         self,
                         self.auth_hello,
                         self.auth_challenge,
                         response
                     )
-            if not authorized:
+            if not authenticated:
                 raise Exception('Invalid authentication')
 
             self.state = STATE_CONNECTED
-            self.auth = authorized
-            details = self.app.auth_details( self.app, authorized.authid, authorized.role)
+            self.auth = authenticated
+            details = self.app.auth_details( self.app, authenticated.authid, authenticated.role)
             message = WELCOME(
                         session_id=self.session_id,
                         details=details
                     )
 
             self.wamp.do_wamp_authenticated(self)
-            self.app.authenticators.on_successful_authenticate(self,authorized)
+            print(">>>>>>>>> AUTHENTICATION STUFF:", authenticated)
+            self.app.authenticators.on_successful_authenticate(self,authenticated)
             return self.dispatch_to_awaiting(message)
 
         except Exception as ex:

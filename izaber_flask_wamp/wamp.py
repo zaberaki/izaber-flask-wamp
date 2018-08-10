@@ -11,7 +11,6 @@ class IZaberFlaskLocalWAMP(object):
         self.on_disconnect = []
         self.on_authenticated = []
 
-
     def register(self,uri,options=None):
         """ A method to use a decorator to register a callback
         """

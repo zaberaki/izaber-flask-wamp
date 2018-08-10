@@ -2,6 +2,8 @@
 
 from swampyer.messages import *
 
+from izaber import initialize, config
+from izaber.paths import paths
 from izaber_flask_wamp.authenticators import *
 
 class MockClient(object):
@@ -60,4 +62,10 @@ def test_connect():
                                 )
     assert authorized == None
 
+    # Test cookies
+    cookie_auth = CookieAuthenticator()
 
+try:
+    initialize('izaber-flask-wamp-test')
+except Exception as ex:
+    print("WEIRD STUF:", ex)

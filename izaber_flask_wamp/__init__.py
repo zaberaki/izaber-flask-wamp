@@ -1,11 +1,13 @@
+import re
 import os
 import importlib
 import threading
 import random
 import sys
 import traceback
+
 import flask
-import re
+from flask_sockets import Sockets, SocketMiddleware
 
 import izaber
 from izaber import config, app_config, autoloader
@@ -22,9 +24,6 @@ from .app import *
 from .wamp import *
 from .client import *
 
-from flask_sockets import Sockets, SocketMiddleware
-
-
 autoloader.add_prefix('izaber.flask.wamp')
 
 CONFIG_BASE = """
@@ -33,6 +32,10 @@ default:
     flask:
         wamp:
             realm: izaber
+            cookie_name: zfwid
+            cookie_fname: '{{cookie_value}}.json'
+    paths:
+        cookies: '{{path}}/tmp/'
 """
 
 
@@ -88,15 +91,22 @@ class IZaberFlaskPermissive(IZaberFlask):
 
 @sockets.route('/ws')
 def echo_socket(ws):
-    client = WAMPServiceClient(app,ws,wamp,flask.request.cookies)
+    client = WAMPServiceClient(
+                    app,
+                    ws,
+                    wamp,
+                    flask.request.cookies
+                )
     client.run()
 
 @initializer('flask_wamp')
 def load_config(**kwargs):
     request_initialize('config',**kwargs)
+    config.config_amend_(CONFIG_BASE)
+
     request_initialize('logging',**kwargs)
     request_initialize('flask',**kwargs)
-    config.config_amend_(CONFIG_BASE)
+    request_initialize('paths',**kwargs)
 
     # We add the realm when we finally have access
     # to the config (after load). Due to how the flask
@@ -104,6 +114,7 @@ def load_config(**kwargs):
     # before config loads causing a bit of an annoyance
     app.finalize_wamp_setup(
             realm=config.flask.wamp.realm,
+            cookie_name=config.flask.wamp.cookie_name,
         )
 
     # Register any app we've created as well

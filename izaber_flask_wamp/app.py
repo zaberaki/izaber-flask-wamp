@@ -1,13 +1,30 @@
-from gevent import pywsgi
-from geventwebsocket.handler import WebSocketHandler
-
 from izaber import config
 
 import izaber.flask
 
+from gevent import pywsgi
+from geventwebsocket.handler import WebSocketHandler
+
+from .common import *
 from .registrations import *
 from .authenticators import *
 from .authorizers import *
+
+class MyWebSocketHandler(WebSocketHandler):
+    """ This little tweaky thing allows us to set cookies upon first connect
+        to ensure we have keys for sessions that cross reloads
+    """
+    def start_response(self, status, headers, exc_info=None):
+        cookies = six.moves.http_cookies.SimpleCookie()
+        cookies.load(self.environ.get('HTTP_COOKIE',{}))
+        cookie_name = self.application.cookie_name
+        if not cookie_name in cookies:
+            cookies = six.moves.http_cookies.SimpleCookie()
+            cookies[cookie_name] = session_key()
+            cookies[cookie_name]['path'] = '/'
+            cookie_string = str(cookies[cookie_name])[12:]
+            headers.append(('Set-Cookie',cookie_string))
+        super(MyWebSocketHandler,self).start_response(status, headers, exc_info)
 
 class FlaskAppWrapper(object):
     def __init__(self,app,users=None):
@@ -31,6 +48,10 @@ class FlaskAppWrapper(object):
         # Used to verify who can access what resources
         self.authorizers = WAMPAuthorizers()
 
+        # The name of the cookie used for websocket session tracking
+        # This helps with reloads of the page
+        self.cookie_name = None
+
     def client_add(self,client):
         self.clients.append(client)
 
@@ -44,13 +65,14 @@ class FlaskAppWrapper(object):
 
         server = pywsgi.WSGIServer(
                         (host, port),
-                        self._app,
-                        handler_class=WebSocketHandler
+                        self,
+                        handler_class=MyWebSocketHandler
                     )
         server.serve_forever()
 
-    def finalize_wamp_setup(self,realm='izaber'):
+    def finalize_wamp_setup(self,realm=SESSION_REALM,cookie_name=SESSION_COOKIE):
         self.realm = realm
+        self.cookie_name = cookie_name
 
     def auth_details(self,ws,authid,authrole='anonymous'):
 
@@ -174,4 +196,6 @@ class FlaskAppWrapper(object):
     def __setattr__(self,k,v):
         return setattr(self._app,k,v)
 
+    def __call__(self,*args,**kwargs):
+        return self._app(*args,**kwargs)
 

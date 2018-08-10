@@ -4,6 +4,8 @@ from six.moves import queue
 
 from swampyer.messages import *
 
+from izaber import config
+
 STATE_DISCONNECTED = 0
 STATE_CONNECTING = 1
 STATE_WEBSOCKET_CONNECTED = 3
@@ -11,6 +13,7 @@ STATE_AUTHENTICATING = 4
 STATE_CONNECTED = 2
 
 SESSION_COOKIE = 'zfwid'
+SESSION_REALM = 'izaber'
 
 ###########################################
 # Data mangling and syntax sugar classes
@@ -83,4 +86,9 @@ def secure_rand():
     # Use the size from Javascript:
     # https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER
     return rng.randint(0,9007199254740991)
+
+def session_key():
+    key = hex(rng.randint(0,sys.maxsize))
+    return key[1:]
+
 
