@@ -15,15 +15,17 @@ class MyWebSocketHandler(WebSocketHandler):
         to ensure we have keys for sessions that cross reloads
     """
     def start_response(self, status, headers, exc_info=None):
-        cookies = six.moves.http_cookies.SimpleCookie()
-        cookies.load(self.environ.get('HTTP_COOKIE',{}))
-        cookie_name = self.application.cookie_name
-        if not cookie_name in cookies:
+        # Only run our code if the connection is to websocket
+        if self.environ.get('HTTP_UPGRADE') == 'websocket':
             cookies = six.moves.http_cookies.SimpleCookie()
-            cookies[cookie_name] = session_key()
-            cookies[cookie_name]['path'] = '/'
-            cookie_string = str(cookies[cookie_name])[12:]
-            headers.append(('Set-Cookie',cookie_string))
+            cookies.load(self.environ.get('HTTP_COOKIE',{}))
+            cookie_name = self.application.cookie_name
+            if not cookie_name in cookies:
+                cookies = six.moves.http_cookies.SimpleCookie()
+                cookies[cookie_name] = session_key()
+                cookies[cookie_name]['path'] = '/'
+                cookie_string = str(cookies[cookie_name])[12:]
+                headers.append(('Set-Cookie',cookie_string))
         super(MyWebSocketHandler,self).start_response(status, headers, exc_info)
 
 class FlaskAppWrapper(object):

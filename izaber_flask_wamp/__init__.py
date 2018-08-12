@@ -35,7 +35,7 @@ default:
             cookie_name: zfwid
             cookie_fname: '{{cookie_value}}.json'
     paths:
-        cookies: '{{path}}/tmp/'
+        cookies_path: '{{path}}/tmp/'
 """
 
 
@@ -99,7 +99,7 @@ def echo_socket(ws):
                 )
     client.run()
 
-@initializer('flask_wamp')
+@initializer('flask_wamp',before=['paths'])
 def load_config(**kwargs):
     request_initialize('config',**kwargs)
     config.config_amend_(CONFIG_BASE)

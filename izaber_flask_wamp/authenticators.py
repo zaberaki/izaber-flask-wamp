@@ -149,7 +149,7 @@ class CookieAuthenticator(Authenticator):
 
     def __init__(self,cookie_path=None,cookie_name=None):
         if cookie_path == None:
-            cookie_path = config.paths.cookies
+            cookie_path = config.paths.cookies_path
         self.cookie_path = paths.full_fpath(cookie_path)
         if not os.path.exists(self.cookie_path):
             os.makedirs(self.cookie_path)
@@ -161,33 +161,44 @@ class CookieAuthenticator(Authenticator):
         return fpath
 
     def session_load(self, cookie_value):
-        fpath = self.session_fpath(cookie)
-        if not os.path.exists(fpath):
-            return
         try:
+            fpath = self.session_fpath(cookie_value)
+            if not os.path.exists(fpath):
+                return
             with open(fpath) as f:
-                auth = DictObject(json.load(f))
+                auth = DictObject(True,json.load(f))
                 return auth
-        except:
+        except Exception as ex:
+            print("OOPS on session_load:", ex)
             return
 
     def session_save(self, cookie_value, auth):
         fpath = self.session_fpath(cookie_value)
         try:
             with open(fpath,'w') as f:
-                json.dump(f,dict(auth))
-        except:
+                json.dump(dict(auth),f)
+        except Exception as ex:
+            print("OOPS on session_save:", ex)
+            import pdb;pdb.set_trace()
             return
 
+    def authenticate_via_cookie(self,cookie_value):
+        """ Checks the local store to see if there's a session that
+            matches the cookie value passed in
+        """
+        return self.session_load(cookie_value)
+
     def authenticate_on_hello(self,client,hello):
-        auth = client.auth
-        cookie_name = self.cookie_name or client.app.cookie_name
-        cookie_value = client.cookies.get(cookie_name)
-        auth = self.session_load(cookie_value)
-        if auth:
-            client.auth = auth
-            return client.auth
-        except:
+        try:
+            auth = client.auth
+            cookie_name = self.cookie_name or client.app.cookie_name
+            cookie_value = client.cookies.get(cookie_name)
+            auth = self.authenticate_via_cookie(cookie_value)
+            if auth:
+                client.auth = auth
+                return client.auth
+        except Exception as ex:
+            print("ERROR TRYING TO AUTH ON HELLO:",ex)
             return
 
     def on_successful_authenticate(self,client,authorized):
@@ -257,10 +268,7 @@ class WAMPAuthenticators(Listable):
 
         matched = self.filter(lambda a:a.authmethod in authmethods)
         for authenticator in matched:
-            print("TESTING WITH:", authenticator)
-            import traceback; traceback.print_stack()
             authenticated = authenticator.authenticate_on_hello(client,hello)
-            print("AUTHENTICATED WITH:", authenticated)
             if authenticated:
                 return authenticated
         return
@@ -270,8 +278,6 @@ class WAMPAuthenticators(Listable):
             takes place. We iterate over all the authorizers just in
             case they want to do something.
         """
-        print("CALLED: on_success_authenticate")
         for authenticator in self:
-            print("UPDATING SUCCESS:",authenticator)
             authenticator.on_successful_authenticate(client,authorized)
 
