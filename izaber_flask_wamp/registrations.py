@@ -41,7 +41,7 @@ class WAMPRegistrations(object):
         self.registered.remove(lambda r: r['registration_id'] == registration_id)
         return registration_id
 
-    def invoke(self,request,callback):
+    def invoke(self,client,request,callback):
         """ Runs the RPC code associated with the URI
         """
         uri = request.procedure
@@ -55,14 +55,29 @@ class WAMPRegistrations(object):
         # Use the first matched handler
         handler = handlers[0]
 
+        # We will disclose the identity by default
+        # FIXME: we want to parallel the autobahn flexibility with
+        # authorizers in the future
         details = {
             'procedure': uri,
+            'progress': 0,
+            'caller': client.session_id,
+            'caller_authid': client.auth.get('authid'),
+            'caller_role': client.auth.get('role'),
+            'enc_algo': None,
         }
+
 
         if handler['type'] == 'local':
             def thread_run():
                 try:
-                    result = handler['callback'](*args,**kwargs)
+                    registration_id = handler['registration_id']
+                    invoke = INVOCATION(
+                        request_id=request.request_id,
+                        registration_id=registration_id,
+                        details=details
+                    )
+                    result = handler['callback'](invoke,*args,**kwargs)
                     callback(RESULT(
                         request_id = request.request_id,
                         details = details,
@@ -70,6 +85,8 @@ class WAMPRegistrations(object):
                         kwargs = {}
                     ))
                 except Exception as ex:
+                    import traceback
+                    traceback.print_exc()
                     callback(ERROR(
                         request_code = WAMP_INVOCATION,
                         request_id = request.request_id,

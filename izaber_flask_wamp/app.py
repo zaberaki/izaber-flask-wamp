@@ -144,14 +144,15 @@ class FlaskAppWrapper(object):
         """
         return self.registrations.register_local(uri,callback,options)
 
-    def call(self,request,callback):
+    def call(self,client,request,callback):
         """ Take the request and pass it along to the appropriate
             handler whereever on the bus it might be
         """
         uri = request.procedure
         try:
-            self.registrations.invoke(request,callback)
+            self.registrations.invoke(client,request,callback)
         except Exception as ex:
+            import traceback
             traceback.print_exc()
             callback(ERROR(
                         request_code = WAMP_CALL,
