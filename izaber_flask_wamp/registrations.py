@@ -67,7 +67,6 @@ class WAMPRegistrations(object):
             'enc_algo': None,
         }
 
-
         if handler['type'] == 'local':
             def thread_run():
                 try:

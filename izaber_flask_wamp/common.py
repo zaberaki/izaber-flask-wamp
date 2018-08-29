@@ -32,7 +32,10 @@ class DictObject(dict):
 
     def __nonzero__(self):
         # Evaluate the object to "True" only if there is data contained within
-        return bool(self.__dict__)
+        try:
+            return bool(self.__dict__.keys())
+        except AttributeError:
+            return False
 
 class DictInterface(object):
     """ Merely provides a way to manipulate attributes via
