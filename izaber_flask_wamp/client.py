@@ -137,7 +137,6 @@ class WAMPServiceClient(object):
                     )
 
             self.wamp.do_wamp_authenticated(self)
-            print(">>>>>>>>> AUTHENTICATION STUFF:", authenticated)
             self.app.authenticators.on_successful_authenticate(self,authenticated)
             return self.dispatch_to_awaiting(message)
 

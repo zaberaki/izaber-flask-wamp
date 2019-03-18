@@ -133,8 +133,17 @@ class FlaskAppWrapper(object):
     def register_remote(self,uri,client):
         """ Registers a callback URI
         """
-        perms = self.authorizers.authorize(client,uri,'register')
-        if not perms['allow']:
+        session = {
+            'realm': client.auth.realm,
+            'authprovider': 'dynamic',
+            'authrole': client.auth.authrole,
+            'authmethod': client.auth.authmethod,
+            'session': client.session_id,
+        }
+        perms = self.authorizers.authorize(session,uri,'register')
+        if 'allow' not in perms or not perms['allow']:
+            import pprint
+            pprint.pprint(client.auth)
             raise Exception("Not Allowed")
         return self.registrations.register_remote(uri,client)
 

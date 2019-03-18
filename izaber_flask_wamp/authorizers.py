@@ -30,7 +30,7 @@ class WAMPAuthorizeUsersEverything(WAMPAuthorizer):
         get nothing.
     """
     def authorize(self, session, uri, action, options=None):
-        if session.get('authrole','anonymous') == 'anonymous':
+        if session.get('authrole','anonymous') in ['anonymous',None]:
             return {'allow': False, 'disclose': False, 'cache': False }
         return {'allow': True, 'disclose': True, 'cache': True }
 

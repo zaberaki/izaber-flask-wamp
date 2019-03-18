@@ -132,7 +132,7 @@ class SimpleTicketAuthenticator(TicketAuthenticator):
                 authid=username,
                 authprovider='dynamic',
                 authmethod=self.authmethod,
-                role=user['role'],
+                authrole=user['role'],
                 realm=realm,
             )
 
