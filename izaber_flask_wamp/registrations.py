@@ -110,15 +110,107 @@ class WAMPRegistrations(object):
                     callback(result)
 
             registration_id = handler['registration_id']
-            client = handler['client']
-            if client.closed():
-                self.reap_client(client)
+            handler_client = handler['client']
+            if handler_client.closed():
+                self.reap_client(handler_client)
                 raise Exception('uri does not exist')
-            client.send_and_await_response(
+            handler_client.send_and_await_response(
                 INVOCATION(
                     request_id=request.request_id,
                     registration_id=registration_id,
-                    details=details
+                    details=details,
+                    args=args,
+                    kwargs=kwargs
+                ),
+                on_yield
+            )
+        else:
+            raise Exception('Unknown handler type')
+
+    def invoke_local(self,auth,request,callback):
+        """ Runs the RPC code associated with the URI
+        """
+        uri = request.procedure
+        args = request.args
+        kwargs = request.kwargs
+
+        handlers = self.registered.match(uri)
+        if not handlers:
+            raise Exception('uri does not exist')
+
+        # Use the first matched handler
+        handler = handlers[0]
+
+        # We will disclose the identity by default
+        # FIXME: we want to parallel the autobahn flexibility with
+        # authorizers in the future
+        details = {
+            'procedure': uri,
+            'progress': 0,
+            # FIXME: what should the caller be when it's the server?
+            # The server can really be whatever it wants, so we're currently
+            # going with session 0?
+            #'caller': client.session_id,
+            'caller': 0,
+            'caller_authid': auth.get('authid'),
+            'caller_role': auth.get('role'),
+            'enc_algo': None,
+        }
+
+        if handler['type'] == 'local':
+            def thread_run():
+                try:
+                    registration_id = handler['registration_id']
+                    invoke = INVOCATION(
+                        request_id=request.request_id,
+                        registration_id=registration_id,
+                        details=details
+                    )
+                    result = handler['callback'](invoke,*args,**kwargs)
+                    callback(RESULT(
+                        request_id = request.request_id,
+                        details = details,
+                        args = [ result ],
+                        kwargs = {}
+                    ))
+                except Exception as ex:
+                    import traceback
+                    traceback.print_exc()
+                    callback(ERROR(
+                        request_code = WAMP_INVOCATION,
+                        request_id = request.request_id,
+                        details = details,
+                        error = uri,
+                        args = [u'Call failed: {}'.format(ex)],
+                    ))
+
+            thread_process = threading.Thread(target=thread_run)
+            thread_process.daemon = True
+            thread_process.start()
+        elif handler['type'] == 'remote':
+            def on_yield(result):
+                if result == WAMP_YIELD:
+                    callback(RESULT(
+                        request_id = request.request_id,
+                        details = details,
+                        args = result.args,
+                        kwargs = result.kwargs
+                    ))
+                else:
+                    callback(result)
+
+            registration_id = handler['registration_id']
+            handler_client = handler['client']
+            if handler_client.closed():
+                self.reap_client(handler_client)
+                raise Exception('uri does not exist')
+            handler_client.send_and_await_response(
+                INVOCATION(
+                    request_id = request.request_id,
+                    registration_id = registration_id,
+                    details = details,
+                    args = args,
+                    kwargs = kwargs
                 ),
                 on_yield
             )

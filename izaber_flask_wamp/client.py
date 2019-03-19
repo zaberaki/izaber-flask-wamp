@@ -25,7 +25,8 @@ class WAMPServiceClient(object):
         return self.ws.closed
 
     def dispatch_to_awaiting(self,result):
-        """ Send data ato the appropriate queues
+        """ Send data to the appropriate queues. We use the request_id to key
+            back to a dict of waiting queue objects.
         """
         try:
             try:
@@ -169,7 +170,7 @@ class WAMPServiceClient(object):
         """
         def on_yield(result):
             self.dispatch_to_awaiting(result)
-        self.app.call( self, request, on_yield )
+        self.app.call_remote( self, request, on_yield )
 
     def handle_subscribe(self, request):
         """ Hey! I want to hear about information on this URI

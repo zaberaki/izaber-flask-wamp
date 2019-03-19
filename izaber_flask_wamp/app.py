@@ -153,7 +153,7 @@ class FlaskAppWrapper(object):
         """
         return self.registrations.register_local(uri,callback,options)
 
-    def call(self,client,request,callback):
+    def call_remote(self,client,request,callback):
         """ Take the request and pass it along to the appropriate
             handler whereever on the bus it might be
         """
@@ -170,6 +170,61 @@ class FlaskAppWrapper(object):
                         error = 'URI does not exist',
                         args = [],
                     ))
+
+    def call_local(self,uri,args=None,kwargs=None,callback=None,auth=None,options=None):
+        """ Take the request to invoke a wamp URI and upon response
+            invoke the callback. As this is a local invocation, we will do
+            the function call syncronously when the callback is not specified
+        """
+        try:
+            request = CALL(
+                          options={},
+                          procedure=uri,
+                          args=args or [],
+                          kwargs=kwargs or {},
+                        )
+            print("REQUEST WAS:", request.dump())
+            if auth is None:
+                auth = {
+                  'authid': 'server',
+                  'role': 'server'
+                }
+            if not callback:
+                response_queue = queue.Queue()
+                def syncronous_callback(response):
+                    response_queue.put(response)
+                callback = syncronous_callback
+                self.registrations.invoke_local(auth,request,callback)
+                # FIXME: what should the timeout be?
+                message = response_queue.get(block=True,timeout=3600)
+                if message == WAMP_RESULT:
+                    return message.args[0]
+               
+                if message == WAMP_ERROR:
+                    if message.args:
+                        err = message.args[0]
+                    else:
+                        err = message.error
+                    raise ExInvocationError(err)
+
+                return message
+            else:
+                self.registrations.invoke_local(auth,request,callback)
+        except Exception as ex:
+            import traceback
+            traceback.print_exc()
+            error = ERROR(
+                        request_code = WAMP_CALL,
+                        request_id = request.request_id,
+                        details = {},
+                        error = 'URI does not exist',
+                        args = [],
+                    )
+            if callback:
+                callback(error)
+            else:
+                return error.error
+
 
     def unregister(self,uri):
         """ Remove the uri from the call pool
