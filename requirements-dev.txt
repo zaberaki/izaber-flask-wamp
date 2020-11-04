@@ -10,9 +10,9 @@
 # `Pipfile.lock` and then regenerate `requirements*.txt`.
 ################################################################################
 
-certifi
-flask-sockets
-izaber-flask
-six
-swampyer
-websocket-client
+cbor
+msgpack
+pipenv-to-requirements
+pytest
+tox
+twine

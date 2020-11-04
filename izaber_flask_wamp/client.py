@@ -18,6 +18,7 @@ class WAMPServiceClient(object):
         self.wamp = wamp
         self.cookies = cookies
         self.auth = DictObject()
+        self.serializer = load_serializer('json')
 
     def closed(self):
         """ Returns true if closed
@@ -226,7 +227,7 @@ class WAMPServiceClient(object):
         """
         if self.state == STATE_DISCONNECTED:
             raise Exception("WAMP is currently disconnected!")
-        message = message.as_str()
+        message = self.serializer.dumps(message.package())
         log.debug("SND>: {}".format(message))
         self.ws.send(message)
 
@@ -249,7 +250,7 @@ class WAMPServiceClient(object):
                 continue
             try:
                 log.debug("<RCV: {}".format(data))
-                message = WampMessage.loads(data)
+                message = WampMessage.load(self.serializer.loads(data))
                 self.receive_message(message)
             except Exception as ex:
                 # FIXME: Needs more granular exception handling

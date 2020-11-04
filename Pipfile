@@ -1,0 +1,23 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+pytest = "*"
+tox = "*"
+pipenv-to-requirements = "*"
+twine = "*"
+cbor = "*"
+msgpack = "*"
+
+[packages]
+certifi = "*"
+six = "*"
+websocket_client = "*"
+izaber_flask = "*"
+Flask-Sockets = "*"
+swampyer = "*"
+
+[requires]
+python_version = "3"

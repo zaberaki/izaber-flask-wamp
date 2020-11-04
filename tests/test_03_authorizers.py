@@ -35,4 +35,4 @@ def test_authorizer():
     assert result['allow'] == False
 
 
-
+test_authorizer()

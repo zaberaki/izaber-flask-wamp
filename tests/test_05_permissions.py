@@ -27,6 +27,7 @@ def test_auth():
     ws = MockWebsocket()
     wamp = MockWamp()
     client = WAMPServiceClient(app,ws,wamp,{})
+    serializer = load_serializer('json')
 
     # Currently use anonymous authentication and we want
     # the client to login
@@ -38,7 +39,8 @@ def test_auth():
     # be a hello as we haven't put down any authmethods
     # without any authmethod it'll just default to anonymous
     client.receive_message(hello_noauth_msg)
-    message = WampMessage.loads(ws.last_sent)
+    data = serializer.loads(ws.last_sent)
+    message = WampMessage.load(data)
     assert message == WAMP_WELCOME
 
     # Now we'll try and get the client to subscribe
@@ -47,7 +49,8 @@ def test_auth():
                         topic='a.b.c',
                     )
     client.receive_message(subscribe_msg)
-    message = WampMessage.loads(ws.last_sent)
+    data = serializer.loads(ws.last_sent)
+    message = WampMessage.load(data)
     assert message == WAMP_ERROR
 
     # Okay, then let's add the authorizer
@@ -56,7 +59,8 @@ def test_auth():
 
     # And try again
     client.receive_message(subscribe_msg)
-    message = WampMessage.loads(ws.last_sent)
+    data = serializer.loads(ws.last_sent)
+    message = WampMessage.load(data)
     assert message == WAMP_SUBSCRIBED
 
     # Note that this shouldn't let 'a.d' through
@@ -65,8 +69,11 @@ def test_auth():
                         topic='a.d',
                     )
     client.receive_message(subscribe_msg)
-    message = WampMessage.loads(ws.last_sent)
+    serializer = load_serializer('json')
+    data = serializer.loads(ws.last_sent)
+    message = WampMessage.load(data)
     assert message == WAMP_ERROR
 
 
 
+test_auth()

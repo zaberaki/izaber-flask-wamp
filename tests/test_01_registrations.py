@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+import time
+
 from swampyer.messages import *
 
 from izaber_flask_wamp.uri import *
@@ -9,6 +11,12 @@ class MockClient(object):
     def __init__(self,return_message=None):
         self.return_message = return_message
         self.received_message = None
+
+        self.session_id = None
+        self.auth = {
+                    'authid': 'test',
+                    'role': 'role'
+                }
 
     def closed(self):
         return False
@@ -47,10 +55,13 @@ def test_register():
                       args=[1],
                       kwargs={'a':'2'}
                     )
+
+    client = MockClient()
     data_capture = {}
     def on_yield(result):
         data_capture['result'] = result
-    invoke_result = regs.invoke(call_message,on_yield)
+    invoke_result = regs.invoke(client,call_message,on_yield)
+    time.sleep(0.2)
 
     assert data_capture['result'].args[0] == 'TEST'
     assert data_capture['result']['details']['procedure'] == 'arf'
@@ -61,7 +72,8 @@ def test_register():
 
     # Check that we really did unregister
     try:
-        invoke_result = regs.invoke(call_message,on_yield)
+        invoke_result = regs.invoke(client,call_message,on_yield)
+        time.sleep(0.2)
     except Exception as ex:
         assert str(ex) == 'uri does not exist'
 
@@ -69,7 +81,8 @@ def test_register():
     def exception_call(*args,**kwargs):
         raise Exception("Whoops")
     registration_id = regs.register_local('arf',exception_call)
-    invoke_result = regs.invoke(call_message,on_yield)
+    invoke_result = regs.invoke(client,call_message,on_yield)
+    time.sleep(0.2)
 
     assert data_capture['result'] == WAMP_ERROR
 
@@ -98,7 +111,7 @@ def test_register():
     data_capture = {}
     def on_yield(result):
         data_capture['result'] = result
-    invoke_result = regs.invoke(call_message,on_yield)
+    invoke_result = regs.invoke(client, call_message,on_yield)
 
     assert data_capture['result'].args[0] == 'WORKING'
 
@@ -108,7 +121,7 @@ def test_register():
 
     # Check that we really did unregister
     try:
-        invoke_result = regs.invoke(call_message,on_yield)
+        invoke_result = regs.invoke(client, call_message,on_yield)
     except Exception as ex:
         assert str(ex) == 'uri does not exist'
 
@@ -122,7 +135,7 @@ def test_register():
     registration_id = regs.register_remote('bloop',client)
     assert registration_id != None
 
-    invoke_result = regs.invoke(call_message,on_yield)
+    invoke_result = regs.invoke(client, call_message,on_yield)
     assert data_capture['result'] == WAMP_ERROR
 
     # Ensure we can reap
@@ -214,3 +227,6 @@ def test_subscriptions():
     regs.reap_client(client)
     assert len(regs.subscribed) == 0
 
+if __name__ == '__main__':
+    test_register()
+    test_subscriptions()

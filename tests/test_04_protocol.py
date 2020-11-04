@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 from swampyer.messages import *
+from swampyer.serializers import *
 
 from izaber_flask_wamp.uri import *
 from izaber_flask_wamp.registrations import *
@@ -31,6 +32,15 @@ def test_connect():
     wamp = MockWamp()
     client = WAMPServiceClient(app,ws,wamp,{})
 
+    # Check the serializer
+    data_serialized = u'[8, 68, 1623115203296700, {"procedure": "arf", '\
+                      u'"progress": 0, "caller": null, "caller_authid": '\
+                      u'"test", "caller_role": "role", "enc_algo": null}, '\
+                      u'"arf", [""], {}]'
+    serializer = load_serializer('json')
+    data = serializer.loads(data_serialized)
+    message = WampMessage.load(data)
+
     # Setup the ticket authenticators
     ticket_auth = SimpleTicketAuthenticator([
                         {
@@ -60,7 +70,7 @@ def test_connect():
     # Okay now through the codebase. This should simply
     # be a hello as we haven't established any authenticators yet
     client.receive_message(hello_noauth_msg)
-    message = WampMessage.loads(ws.last_sent)
+    message = WampMessage.load(serializer.loads(ws.last_sent))
     assert message == WAMP_WELCOME
 
     # Now, after the authenticator has been added, we should get a
@@ -68,19 +78,20 @@ def test_connect():
     ws.last_sent = None
     app.authenticators.append(ticket_auth)
     client.receive_message(hello_msg)
-    message = WampMessage.loads(ws.last_sent)
+    message = WampMessage.load(serializer.loads(ws.last_sent))
     assert message == WAMP_CHALLENGE
 
     # Cool, let's submit our response and get our welcome message
     ws.last_sent = None
     client.receive_message(authenticate_msg)
-    message = WampMessage.loads(ws.last_sent)
+    message = WampMessage.load(serializer.loads(ws.last_sent))
     assert message == WAMP_WELCOME
 
     # How about a bad login
     ws.last_sent = None
     client.receive_message(bad_authenticate_msg)
-    message = WampMessage.loads(ws.last_sent)
+    message = WampMessage.load(serializer.loads(ws.last_sent))
     assert message == WAMP_ERROR
 
-
+if __name__ == '__main__':
+    test_connect()

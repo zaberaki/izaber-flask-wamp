@@ -66,3 +66,5 @@ def test_matching():
     assert len(match_list.match('a')) == 2
     assert len(match_list.match('a.b')) == 3
 
+if __name__ == '__main__':
+    test_matching()

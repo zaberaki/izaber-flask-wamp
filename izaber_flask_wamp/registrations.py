@@ -91,7 +91,7 @@ class WAMPRegistrations(object):
                         request_id = request.request_id,
                         details = details,
                         error = uri,
-                        args = [u'Call failed: {}'.format(ex)],
+                        args = [u'Call failed: {}: Stack: {}'.format(ex,traceback.format_exc())],
                     ))
 
             thread_process = threading.Thread(target=thread_run)

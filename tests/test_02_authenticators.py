@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+import time
+
 from swampyer.messages import *
 
 from izaber import initialize, config
@@ -48,7 +50,8 @@ def test_connect():
                                     challenge_msg,
                                     authenticate_msg
                                 )
-    assert authorized.role == 'backend'
+
+    assert authorized.authrole == 'backend'
 
     # How about a bad password?
     bad_authenticate_msg = AUTHENTICATE(
@@ -69,3 +72,5 @@ try:
     initialize('izaber-flask-wamp-test')
 except Exception as ex:
     print("WEIRD STUF:", ex)
+
+test_connect()
